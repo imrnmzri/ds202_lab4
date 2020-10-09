@@ -1,0 +1,237 @@
+---
+title: "Lab4"
+author: "Muhamad Imran Bin Maszeri"
+date: "10/7/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+library(readxl)
+library(ggplot2)
+library(tidyverse)
+library(dplyr)
+
+defense <- read_excel("cyclonesFootball2019.xlsx", sheet='Defensive')
+str(defense)
+offense <- read_excel("cyclonesFootball2019.xlsx", sheet='Offensive')
+str(offense)
+bio <- read_excel("cyclonesFootball2019.xlsx", sheet='Biography')
+str(bio)
+
+
+defense2018 <- read_excel("cyclonesFootball2018.xlsx", sheet='Defensive')
+str(defense2018)
+offense2018 <- read_excel("cyclonesFootball2018.xlsx", sheet='Offensive')
+str(offense2018)
+bio2018 <- read_excel("cyclonesFootball2018.xlsx", sheet='Biography')
+str(bio2018)
+```
+
+## Part one: Cleaning data
+Although the three Excel sheets are loaded into R, they are not useful before some cleaning. Manipulate the three imported data frames, so that in the cleaned dataset:
+
+1. The player names and opponent names are factors.
+```{r message=FALSE, warning=FALSE}
+defClean <- defense %>% 
+  mutate_at(c('Name', 'Opponent_Opponent'), factor)
+offClean <- offense %>% 
+  mutate_at(c('Name', 'Opponent_Opponent'), factor)
+bioClean <- bio %>%
+  mutate_at(c('Name'), factor)
+
+str(defClean)
+str(offClean)
+str(bioClean)
+```
+
+2. All offensive and defensive statistics are numerical. The Weight column in biogrpahy is also numeric. (Optional: Learn to mutate multiple columns systematically using the ?across function in `dplyr)
+```{r message=FALSE, warning=FALSE}
+defClean <- defClean %>%
+  mutate(across(where(is.character), as.numeric)) %>%
+  mutate_at(c(3:11), ~replace(., is.na(.), 0))
+offClean <- offClean %>%
+  mutate(across(where(is.character), as.numeric)) %>%
+  mutate_at(c(3:12), ~replace(., is.na(.), 0))
+bioClean <- bioClean %>%
+  mutate(across(starts_with("Weight"), as.numeric))
+
+str(defClean)
+str(offClean)
+str(bioClean)
+```
+
+3. Change the Height column in biogrpahy into numeric. (Hint: Use a unit that works well)
+```{r message=FALSE, warning=FALSE}
+bioClean <- bioClean %>%
+  separate(Height, c("feet","inches"), "-") %>%
+  mutate(across(c("feet","inches"), as.numeric)) %>%
+  mutate(cm_height=(feet*30.48) + cm(inches)) %>%
+  select(!c("feet","inches"))
+str(bioClean)
+```
+
+## Part two: Tidying
+For the following questions, work on the cleaned data frames defClean, offClean, and bioClean.
+
+1. Reformat the defClean data frame into a tidy format using pivot_longer. The type of statistic (Tackles_Solo, Tackles_ASST, etc) is added as a new key column named stat.
+```{r message=FALSE, warning=FALSE}
+defClean <- defClean %>%
+  pivot_longer(Tackles_Solo:Pass_PB, names_to='stat')
+
+str(defClean)
+```
+
+
+2. Compare the distributions of the defensive statistics. What defensive skills are rare?
+```{r message=FALSE, warning=FALSE}
+defClean %>%
+  ggplot(aes(value)) + geom_histogram() + facet_wrap(~stat) + 
+  labs(title="Defensive Statistics for ISU Defense Team")
+```
+
+Answer: The defensive skills that are rare are; Pass_PB, Pass_QBH, Tackles_Sack, Turnover_FF, Turnover_FR and Turnover_INT.
+
+3. Did ISU have better defense against Iowa or Notre Dame? Answer this question by creating a scatterplot with x- and y-axes being the number of solo tackles (of each player). A large number of solo tackles is an indicator of good defense.
+```{r message=FALSE, warning=FALSE}
+defClean %>%
+  filter(Opponent_Opponent %in% c('Iowa', 'Notre Dame'), stat=='Tackles_Solo') %>%
+  ggplot(aes('Notre Dame', 'Iowa', color=Opponent_Opponent)) + geom_point() + geom_jitter() + labs(title="Solo Tackles for ISU Defense Team vs Iowa and Notre Dame", legend="Opponent")
+  
+```
+
+Answer: ISU have better defense against Notre Dame because more players have higher
+solo tackles against Notre Dame compared to Iowa
+
+Now turn our attention to the player biography.
+
+4. Separate the Hometown column into two columns, namely the city and the state. Print the first few rows of these two columns. (Hint: look at the sep= argument of separate)
+```{r message=FALSE, warning=FALSE}
+bioClean <- bioClean %>%
+  separate(Hometown, c("city","state"), ",")
+
+head(bioClean)
+```
+
+5. How many players are there from each state?
+```{r message=FALSE, warning=FALSE}
+bioClean %>%
+  group_by(state) %>%
+  summarise(nState=n()) %>%
+  arrange(desc(nState))
+```
+
+Answer: There are a total of 35 players from Iowa, the most amount in the team.
+
+## Part three: Joining data frames
+1. Find which states do the ISU defensive and offensive players come from. Create an appropriate summary.
+```{r message=FALSE, warning=FALSE}
+offState <- offClean %>%
+  select(Name) %>%
+  distinct() %>%
+  left_join(bioClean, by=c("Name"))
+
+offState %>%
+  group_by(state) %>%
+  drop_na() %>%
+  summarise(nState=n()) %>%
+  arrange(desc(nState))
+
+defState <- defClean %>%
+  pivot_wider(names_from='stat', values_from='value') %>%
+  select(Name) %>%
+  distinct() %>%
+  left_join(bioClean, by=c("Name"))
+
+defState %>%
+  group_by(state) %>%
+  drop_na() %>%
+  summarise(nState=n()) %>%
+  arrange(desc(nState))
+```
+
+Answer: Most offense team is from Florida and Oklahoma, and most defense team is from Iowa
+
+
+2. How does the performance of quarterback Brock Purdy relate to the performance of the ISU team?
+```{r message=FALSE, warning=FALSE}
+purdy <- offClean %>%
+  filter(Name=="Purdy, Brock")
+
+purdy %>%
+  select(c(Opponent_Opponent, Passing_YDS, Passing_INT)) %>%
+  arrange(desc(Passing_YDS)) %>%
+  head()
+
+defClean %>%
+  filter(Opponent_Opponent %in% c('ULM', 'Oklahoma State', 'Texas Tech', 'Kansas', 'Texas'), stat=='Tackles_Solo') %>%
+  ggplot(aes(value)) + geom_histogram() + facet_wrap(~Opponent_Opponent)
+
+offClean %>%
+  filter(Opponent_Opponent %in% c('ULM', 'Oklahoma State', 'Texas Tech', 'Kansas', 'Texas')) %>%
+  mutate(total_offense= Receiving_REC	+ Receiving_YDS + Receiving_TD) %>%
+  select(Opponent_Opponent, total_offense) %>%
+  group_by(Opponent_Opponent) %>%
+  drop_na() %>%
+  summarise(totalOff=sum(total_offense)) %>%
+  arrange(desc(totalOff))
+
+```
+
+Answer: I decided to find out Purdy's performance from his total Passing Yards, which is one of the ways to calculate the quality of a quarterback. His passing yards are the most when he played against ULM, OK State, Texas Tech, Kansas, and Texas. Purdy only has 1 passing that is intercepted in 4 out of 5 in his top games. From there, I compared the offense team based on total offense points (receiving yards, receiving rec, and receiving td) and defense points (total solo tackles). It seems that the solo tackle distribution are higher when Purdy has the best passing yard at ULM, and the offense team have the highest total offense points in ULM. Overall, it can be said that when Purdy plays good, the team plays good too.
+
+3. Which ISU player(s) made big progress over the last year? Compare the 2019 and the 2018 data here.
+```{r message=FALSE, warning=FALSE}
+
+offClean2018 <- offense2018 %>% 
+  mutate_at(c('Name', 'Opponent_Opponent'), factor) %>%
+  mutate(across(where(is.character), as.numeric)) %>%
+  mutate_at(c(3:12), ~replace(., is.na(.), 0))
+
+off_team2018 <- offClean2018 %>%
+  mutate(sum = Receiving_REC	+ Receiving_YDS + Receiving_TD) %>%
+  select(Name, sum) %>%
+  group_by(Name) %>%
+  drop_na() %>%
+  summarise(team_offense2018=sum(sum)) %>%
+  arrange(desc(team_offense2018))
+
+off_team2019 <- offClean %>%
+  mutate(sum = Receiving_REC + Receiving_YDS + Receiving_TD) %>%
+  select(Name, sum) %>%
+  group_by(Name) %>%
+  drop_na() %>%
+  summarise(team_offense2019=sum(sum)) %>%
+  arrange(desc(team_offense2019))
+
+off_team2019 %>%
+  left_join(off_team2018, by=c('Name')) %>%
+  group_by(Name) %>%
+  mutate(off_points=team_offense2019-team_offense2018) %>%
+  select(Name, off_points) %>%
+  arrange(desc(off_points)) %>%
+  head()
+
+defClean2018 <- defense2018 %>% 
+  mutate_at(c('Name', 'Opponent_Opponent'), factor) %>%
+  mutate(across(where(is.character), as.numeric)) %>%
+  mutate_at(c(3:11), ~replace(., is.na(.), 0))
+
+def_tackle2019 <- defClean %>%
+  pivot_wider(names_from='stat', values_from='value')
+
+defClean2018 %>%
+  left_join(def_tackle2019, by=c('Name','Opponent_Opponent')) %>%
+  select(Name, Tackles_Solo.x, Tackles_Solo.y) %>%
+  mutate(total_tackles=Tackles_Solo.y-Tackles_Solo.x) %>%
+  select(Name, total_tackles) %>%
+  arrange(desc(total_tackles)) %>%
+  head()
+
+```
+
+Answer: Charlie Kolar has the highest improvement in total offense points, where he has an increase of 604 points. Anthony Johnson has the highest solo tackle improvement overall, with an increase of 7 total tackles.
